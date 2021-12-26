@@ -1,0 +1,348 @@
+---
+title: "Stroke Prediction"
+author: "Kartik Ullal"
+date: "12/25/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Importing all libraries required
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(pscl)
+library(ROCR)
+library(caret)
+library(ROCR)
+```
+
+### Reading Dataset
+
+
+```{r}
+dat_stroke = read.csv("healthcare-dataset-stroke-data.csv")
+dim(dat_stroke)
+```
+### Data Cleaning
+
+```{r}
+colSums(is.na(dat_stroke))
+colSums(dat_stroke == "N/A")
+```
+#### Checking for duplicate values
+```{r}
+n_occur <- data.frame(table(dat_stroke$id))
+n_occur[n_occur$Freq > 1,]
+
+sum(dat_stroke$gender == "Other")
+
+sum(dat_stroke$smoking_status == "Unknown")
+```
+#### Filling missing values of smoking status for ages <= 5
+```{r}
+dat_stroke[dat_stroke$age <= 5, "smoking_status"] <- "never smoked"
+```
+
+#### Removing NA values
+
+NA values are insignificant portion of the data, so we will remove them.
+
+```{r}
+dat_stroke <- dat_stroke %>%
+  filter(
+    bmi != "N/A",
+    gender != "Other"
+  ) %>%
+  mutate(
+    gender = factor(gender),
+    hypertension = factor(hypertension),
+    heart_disease = factor(heart_disease),
+    ever_married = factor(ever_married),
+    work_type = factor(work_type),
+    residence_type = factor(Residence_type),
+    bmi = as.numeric(bmi),
+    smoking_status = factor(smoking_status),
+    stroke = factor(stroke),
+  ) %>%
+  select(
+    -Residence_type
+  )
+```
+
+### Data Visualization
+
+#### Bar plot of parameters with respect to stroke
+```{r}
+p2 <- dat_stroke %>%
+  ggplot(aes(x = hypertension, fill = stroke)) +
+  geom_bar()
+
+p3 <- dat_stroke %>%
+  ggplot(aes(x = heart_disease, fill = stroke)) +
+  geom_bar()
+
+p4 <- dat_stroke %>%
+  ggplot(aes(x = ever_married, fill = stroke)) +
+  geom_bar()
+
+p7 <- dat_stroke %>%
+  ggplot(aes(x = smoking_status, fill = stroke)) +
+  geom_bar()
+
+grid.arrange(grobs = list(p2, p3,
+                          p4, p7),
+             ncol = 2,
+             top = "Count of Levels for Each Factor"
+)
+```
+
+#### Bar plot of proportions of parameters with respect to stroke
+```{r}
+dat_prop <- dat_stroke %>%
+  group_by(hypertension) %>%
+  summarise(prop = sum(stroke == "1")/length(hypertension))
+
+p2 <- dat_prop %>%
+  ggplot(aes(x = hypertension, y = prop)) +
+  geom_col(fill = "#00BFC4")
+
+dat_prop <- dat_stroke %>%
+  group_by(heart_disease) %>%
+  summarise(prop = sum(stroke == "1")/length(heart_disease))
+
+p3 <- dat_prop %>%
+  ggplot(aes(x = heart_disease, y = prop)) +
+  geom_col(fill = "#00BFC4")
+
+dat_prop <- dat_stroke %>%
+  group_by(ever_married) %>%
+  summarise(prop = sum(stroke == "1")/length(ever_married))
+
+p4 <- dat_prop %>%
+  ggplot(aes(x = ever_married, y = prop)) +
+  geom_col(fill = "#00BFC4")
+
+dat_prop <- dat_stroke %>%
+  group_by(smoking_status) %>%
+  summarise(prop = sum(stroke == "1")/length(smoking_status))
+
+p7 <- dat_prop %>%
+  ggplot(aes(x = smoking_status, y = prop)) +
+  geom_col(fill = "#00BFC4")
+
+grid.arrange(grobs = list(p2, p3,
+                          p4, p7),
+             ncol = 2,
+             top = "Proportion of Strokes for Each Factor"
+)
+
+```
+#### Boxplot of age and parameters with respect to stroke
+```{r}
+p2 <- dat_stroke %>%
+  ggplot(aes(x = hypertension, y = age, color = stroke)) +
+  geom_boxplot() +
+  theme(legend.position="none")
+
+p3 <- dat_stroke %>%
+  ggplot(aes(x = heart_disease, y = age, color = stroke)) +
+  geom_boxplot() +
+  theme(legend.position="none")
+
+p4 <- dat_stroke %>%
+  ggplot(aes(x = ever_married, y = age, color = stroke)) +
+  geom_boxplot() +
+  theme(legend.position="none")
+
+p7 <- dat_stroke %>%
+  ggplot(aes(x = smoking_status, y = age, color = stroke)) +
+  geom_boxplot() +
+  theme(legend.position="none")
+
+grid.arrange(grobs = list(p2, p3,
+                          p4, p7), 
+             ncol = 2,
+             top = "Stroke and Age Across Factors"
+)
+
+```
+
+
+#### Boxplot of average glucose level and parameters with respect to stroke
+```{r}
+
+p2 <- dat_stroke %>%
+  ggplot(aes(x = hypertension, y = avg_glucose_level, color = stroke)) +
+  geom_boxplot() +
+  theme(legend.position="none")
+
+p3 <- dat_stroke %>%
+  ggplot(aes(x = heart_disease, y = avg_glucose_level, color = stroke)) +
+  geom_boxplot() +
+  theme(legend.position="none")
+
+p4 <- dat_stroke %>%
+  ggplot(aes(x = ever_married, y = avg_glucose_level, color = stroke)) +
+  geom_boxplot() +
+  theme(legend.position="none")
+
+p7 <- dat_stroke %>%
+  ggplot(aes(x = smoking_status, y = avg_glucose_level, color = stroke)) +
+  geom_boxplot() +
+  theme(legend.position="none")
+
+grid.arrange(grobs = list(p2, p3,
+                          p4, p7), 
+             ncol = 2,
+             top = "Stroke and Average Glucose Level Across Factors"
+)
+
+```
+
+#### Density plot of parameters with stroke
+
+```{r}
+p1 <- dat_stroke %>%
+  ggplot(aes(x = age, fill = stroke)) +
+  geom_density(alpha = 0.5) +
+  theme(legend.position="none")
+
+p2 <- dat_stroke %>%
+  ggplot(aes(x = avg_glucose_level, fill = stroke)) +
+  geom_density(alpha = 0.5) +
+  theme(legend.position="none")
+
+p3 <- dat_stroke %>%
+  ggplot(aes(x = bmi, fill = stroke)) +
+  geom_density(alpha = 0.5) +
+  theme(legend.position="none")
+
+p4 <- dat_stroke %>%
+  ggplot(aes(x = age, fill = stroke)) +
+  geom_histogram() +
+  theme(legend.position="none")
+
+p5 <- dat_stroke %>%
+  ggplot(aes(x = avg_glucose_level, fill = stroke)) +
+  geom_histogram() +
+  theme(legend.position="none")
+
+p6 <- dat_stroke %>%
+  ggplot(aes(x = bmi, fill = stroke)) +
+  geom_histogram() +
+  theme(legend.position="none")
+
+grid.arrange(grobs = list(p1, p2, p3,
+                          p4, p5, p6), 
+             ncol = 3,
+             top = "Distribution of Continuous Variables"
+)
+```
+
+### Logistic Regression Model
+
+#### Creating training and test sets
+```{r}
+set.seed(2401)
+split <- sort(sample(nrow(dat_stroke), nrow(dat_stroke) * 0.7))
+dat_stroke_train <- dat_stroke[split,]
+dat_stroke_test <- dat_stroke[-split,]
+```
+
+#### Fitting the logistic regression model
+```{r}
+glm_stroke <- glm(
+  stroke ~ gender + age + hypertension + heart_disease + ever_married + 
+    work_type + residence_type + avg_glucose_level + bmi + smoking_status,
+  data = dat_stroke_train,
+  family = binomial
+)
+```
+
+```{r}
+summary(glm_stroke)
+anova(glm_stroke, test = 'Chisq')
+```
+
+#### ROC curve
+```{r}
+roc_pred <- prediction(
+  predictions = glm_stroke$fitted.values,
+  labels = dat_stroke_train$stroke
+)
+
+roc_perf <- performance(
+  roc_pred,
+  measure = "tpr",
+  x.measure = "fpr"
+)
+
+roc_curve <- data.frame(
+  Spec = 1 - unlist(roc_perf@x.values),
+  Sens = unlist(roc_perf@y.values),
+  thresh = unlist(roc_perf@alpha.values)
+)
+
+roc_curve$distance <- sqrt((1 - roc_curve$Spec)^2 + (1 - roc_curve$Sens)^2)
+
+opt <- roc_curve %>%
+  slice(
+    distance %>% which.min()
+  )
+
+
+plot(
+  roc_perf,
+  main = "Logistic Regression for Strokes"
+)
+
+abline(0, 1, col = "grey80")
+
+#Optimal Threshold
+abline(v = 1 - opt$Spec, col = "gray80")
+abline(h = opt$Sens, col = "gray80")
+```
+
+#### Testing model on test data
+```{r}
+glm_predict <- predict.glm(glm_stroke,
+                          newdata =  dat_stroke_test,
+                           type = "response",
+                           se.fit = FALSE) %>% as_tibble()
+glm_predict$pred <- ifelse(glm_predict$value >= opt$thresh, 1, 0)
+glm_predict <- glm_predict %>%
+    mutate(
+    pred = factor(pred)
+  )
+print(glm_predict)
+
+confusionMatrix(
+  data = glm_predict$pred,
+  reference = dat_stroke_test$stroke,
+  positive = "1"
+)
+```
+
+#### Confusion Matrix
+```{r}
+table <- data.frame(confusionMatrix(glm_predict$pred, dat_stroke_test$stroke)$table)
+
+plotTable <- table %>%
+  mutate(goodbad = ifelse(table$Prediction == table$Reference, "good", "bad")) %>%
+  group_by(Reference) %>%
+  mutate(prop = Freq/sum(Freq))
+
+# fill alpha relative to sensitivity/specificity by proportional outcomes within reference groups (see dplyr code above as well as original confusion matrix for comparison)
+ggplot(data = plotTable, mapping = aes(x = Reference, y = Prediction, fill = goodbad, alpha = prop)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), vjust = .5, fontface  = "bold", alpha = 1) +
+  scale_fill_manual(values = c(good = "green", bad = "red")) +
+  theme_bw() +
+  xlim(rev(levels(table$Reference)))
+```
